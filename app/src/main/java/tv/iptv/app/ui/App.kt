@@ -109,7 +109,15 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
                 Backdrop()
 
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val phone = maxWidth < 700.dp
+                    // phone/tablet always gets the bottom bar, a TV keeps the side rail
+                    val isTelevision = remember {
+                        context.packageManager.hasSystemFeature(
+                            android.content.pm.PackageManager.FEATURE_LEANBACK,
+                        ) || context.packageManager.hasSystemFeature(
+                            android.content.pm.PackageManager.FEATURE_TELEVISION,
+                        )
+                    }
+                    val phone = !isTelevision || maxWidth < 780.dp
                     val columns = if (phone) 1 else 2
 
                     val content: @Composable () -> Unit = {

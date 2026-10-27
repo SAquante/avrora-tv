@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -52,7 +54,8 @@ fun Sidebar(selected: String, onSelect: (String) -> Unit, onEnterContent: () -> 
                     listOf(Color(0xE6331B10), Color(0xF21B100A)),
                 ),
             )
-            .padding(horizontal = 16.dp, vertical = 26.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
