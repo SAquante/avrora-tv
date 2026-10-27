@@ -1,0 +1,300 @@
+package tv.iptv.app.ui
+
+import android.content.Context
+import android.view.KeyEvent
+import androidx.annotation.OptIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.PlayerView
+import tv.iptv.app.MainActivity
+import tv.iptv.app.data.Channel
+import tv.iptv.app.data.Stream
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private const val DEFAULT_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+private const val START_TIMEOUT_MS = 20_000L
+
+@OptIn(UnstableApi::class)
+@Composable
+fun PlayerScreen(
+    channel: Channel,
+    languageId: String?,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+) {
+    val context = LocalContext.current
+    var attempt by remember(channel.id) { mutableIntStateOf(0) }
+    var notice by remember(channel.id) { mutableStateOf<String?>(null) }
+    var buffering by remember(channel.id) { mutableStateOf(true) }
+    var paused by remember(channel.id) { mutableStateOf(false) }
+
+    // the same channel can have feeds in several languages; play the one that matches the list,
+    // and among them the best quality available
+    val streams = remember(channel.id, languageId) {
+        channel.streams.sortedWith(
+            compareByDescending<Stream> { languageId != null && it.language == languageId }
+                .thenByDescending { qualityRank(it.quality) },
+        )
+    }
+
+    val stream = streams.getOrNull(attempt)
+    val playerRef = remember { mutableStateOf<ExoPlayer?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val onError by rememberUpdatedState {
+        if (attempt + 1 < streams.size) {
+            notice = "Поток не отвечает, пробую следующий…"
+            attempt++
+        } else {
+            attempt = streams.size
+        }
+    }
+
+    // A visible action bar instead of a hidden long-press: DOWN opens it, OK acts on it.
+    var actionsOpen by remember(channel.id) { mutableStateOf(false) }
+    val activity = remember(context) { context.findActivity() }
+    DisposableEffect(activity) {
+        val handler: (Int, KeyEvent) -> Boolean = { code, event ->
+            val down = event.action == KeyEvent.ACTION_DOWN
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (down) actionsOpen = true
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (down) actionsOpen = false
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                -> {
+                    if (down) {
+                        if (actionsOpen) {
+                            actionsOpen = false
+                            onToggleFavorite()
+                            notice = if (isFavorite) "Убрано из избранного" else "Добавлено в избранное ★"
+                        } else {
+                            playerRef.value?.let { it.playWhenReady = !it.playWhenReady }
+                        }
+                    }
+                    true
+                }
+
+                else -> false
+            }
+        }
+        activity?.keyHandler = handler
+        onDispose { if (activity?.keyHandler === handler) activity.keyHandler = null }
+    }
+
+    DisposableEffect(stream?.url, stream?.userAgent) {
+        val player = stream?.let { buildPlayer(context, it) }
+        playerRef.value = player
+        player?.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                onError()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                buffering = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
+                if (playbackState == Player.STATE_READY) notice = null
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                paused = !isPlaying
+            }
+        })
+
+        // Dead streams often connect and then sit silent forever instead of failing
+        val watchdog = scope.launch {
+            delay(START_TIMEOUT_MS)
+            if (player != null && playerRef.value === player && buffering) onError()
+        }
+
+        onDispose {
+            watchdog.cancel()
+            player?.release()
+            if (playerRef.value === player) playerRef.value = null
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        if (stream == null) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Не удалось воспроизвести", color = Color.White, fontSize = 28.sp)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Все потоки этого канала недоступны. Нажмите «Назад», чтобы выбрать другой.",
+                    color = Palette.TextDim,
+                )
+            }
+        } else {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        isFocusable = false
+                        isFocusableInTouchMode = false
+                        keepScreenOn = true
+                        this.player = playerRef.value
+                    }
+                },
+                update = { it.player = playerRef.value },
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            if (buffering) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Palette.Accent,
+                )
+            }
+
+            if (paused && !buffering) {
+                Text(
+                    text = "Пауза · ОК — продолжить",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0x99000000))
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xCC000000), Color(0x00000000)),
+                    ),
+                ),
+        )
+
+        Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 20.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = channel.title,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = listOfNotNull(
+                        stream?.quality?.takeIf { it.isNotEmpty() },
+                        if (isFavorite) "ОК — пауза · ▼ — действия (★ в избранном)"
+                        else "ОК — пауза · ▼ — действия",
+                    ).joinToString(" · "),
+                    color = Palette.TextDim,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+
+        if (actionsOpen) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 56.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Palette.Accent)
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    text = if (isFavorite) "★ В избранном — убрать" else "☆ В избранное",
+                    color = Palette.Background,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+
+        notice?.let { text ->
+            Text(
+                text = text,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xCC000000))
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+private fun buildPlayer(context: Context, stream: Stream): ExoPlayer {
+    val http = DefaultHttpDataSource.Factory()
+        .setUserAgent(stream.userAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT)
+        .setConnectTimeoutMs(8_000)
+        .setReadTimeoutMs(15_000)
+        .setAllowCrossProtocolRedirects(true)
+
+    stream.referrer?.takeIf { it.isNotBlank() }?.let { referrer ->
+        http.setDefaultRequestProperties(mapOf("Referer" to referrer))
+    }
+
+    return ExoPlayer.Builder(context)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+        .build()
+        .apply {
+            setMediaItem(MediaItem.fromUri(stream.url))
+            playWhenReady = true
+            prepare()
+        }
+}

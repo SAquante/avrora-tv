@@ -1,0 +1,12 @@
+_tools/
+_data/
+_assets/
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+*.apk
+*.png
+*.jpg
