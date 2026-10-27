@@ -83,14 +83,6 @@ fun Sidebar(selected: String, onSelect: (String) -> Unit, onEnterContent: () -> 
             SidebarItem("Веб-камеры", selected == SECTION_CAMS, onEnterContent) { onSelect(SECTION_CAMS) }
         }
         SidebarItem("★ Избранное", selected == SECTION_FAVORITES, onEnterContent) { onSelect(SECTION_FAVORITES) }
-
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = "iptv-org · famelack",
-            color = Color(0x59FFFFFF),
-            fontSize = 11.sp,
-            modifier = Modifier.padding(start = 14.dp),
-        )
     }
 }
 
