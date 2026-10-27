@@ -233,11 +233,13 @@ def main():
                 feeds[(row['channel'], row['id'])] = langs
 
     alive = {}
-    alive_path = os.path.join(DATA, 'alive.json')
-    if os.path.exists(alive_path):
-        with open(alive_path, encoding='utf-8') as f:
-            alive = json.load(f)
-        print('liveness data for', len(alive), 'urls')
+    for candidate in ('alive_deep.json', 'alive.json'):
+        candidate_path = os.path.join(DATA, candidate)
+        if os.path.exists(candidate_path):
+            with open(candidate_path, encoding='utf-8') as f:
+                alive = json.load(f)
+            print('liveness data from', candidate, 'for', len(alive), 'urls')
+            break
 
     cat_entries = parse_m3u(os.path.join(DATA, 'index.category.m3u'))
     lang_entries = parse_m3u(os.path.join(DATA, 'index.language.m3u'))

@@ -1,6 +1,7 @@
 package tv.iptv.app.ui
 
 import android.content.Context
+import android.util.Log
 import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -134,6 +135,7 @@ fun PlayerScreen(
         playerRef.value = player
         player?.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                Log.w("IPTV", "playback failed: ${error.errorCodeName} ${error.message}", error)
                 onError()
             }
 

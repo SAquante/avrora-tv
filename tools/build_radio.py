@@ -1,4 +1,8 @@
-"""Build assets/radio.json from radio-browser.info (community, keyless)."""
+"""Build assets/radio.json from radio-browser.info.
+
+Every country gets its own quota, so small countries are represented too instead
+of only the globally popular stations.
+"""
 import json, os, time, urllib.parse, urllib.request
 from collections import Counter
 
@@ -8,81 +12,91 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, '..', '_data')
 OUT = os.path.join(HERE, '..', 'app', 'src', 'main', 'assets', 'radio.json')
 
-API = 'https://de1.api.radio-browser.info/json/stations/search'
-UA = 'AvroraTV/1.0 (+https://github.com/iptv-org)'
-PAGE = 500
-TARGET = 9000
+BASE = 'https://de1.api.radio-browser.info/json'
+UA = 'AvroraTV/1.0'
+PER_COUNTRY = 120
+GLOBAL_TOP = 2000
 
 
-def fetch(offset):
-    query = urllib.parse.urlencode({
-        'limit': PAGE,
-        'offset': offset,
-        'hidebroken': 'true',
-        'order': 'clickcount',
-        'reverse': 'true',
-    })
-    req = urllib.request.Request(f'{API}?{query}', headers={'User-Agent': UA})
-    with urllib.request.urlopen(req, timeout=45) as resp:
-        return json.load(resp)
+def get_json(url, retries=3):
+    for attempt in range(retries):
+        try:
+            request = urllib.request.Request(url, headers={'User-Agent': UA})
+            with urllib.request.urlopen(request, timeout=40) as response:
+                return json.load(response)
+        except Exception as exc:  # noqa: BLE001 - retry, then give up on this query
+            if attempt == retries - 1:
+                print('  skip', url.split('?')[-1][:60], exc)
+                return []
+            time.sleep(1 + attempt)
+    return []
+
+
+def search(params):
+    return get_json(f'{BASE}/stations/search?' + urllib.parse.urlencode(params))
 
 
 def main():
-    stations = []
-    offset = 0
-    while len(stations) < TARGET:
-        try:
-            page = fetch(offset)
-        except Exception as exc:  # noqa: BLE001 - a failed page just ends the crawl
-            print('stop at', offset, exc)
-            break
-        if not page:
-            break
-        stations.extend(page)
-        offset += PAGE
-        print('fetched', len(stations), flush=True)
-        time.sleep(0.4)
-
-    countries = {c['code'].upper(): c['name'] for c in json.load(
+    countries = get_json(f'{BASE}/countries')
+    iptv_names = {c['code'].upper(): c['name'] for c in json.load(
         open(os.path.join(DATA, 'countries.json'), encoding='utf-8'))}
 
-    out = []
-    seen = set()
-    for item in stations:
-        url = (item.get('url_resolved') or item.get('url') or '').strip()
-        name = (item.get('name') or '').strip()
-        if not url or not name or url in seen:
-            continue
-        seen.add(url)
-        code = (item.get('countrycode') or '').lower()
-        tags = [t.strip() for t in (item.get('tags') or '').split(',') if t.strip()][:3]
-        out.append({
-            'id': item.get('stationuuid') or url,
-            'name': name[:80],
-            'country': code,
-            'url': url,
-            'tags': tags,
-            'codec': (item.get('codec') or '').upper(),
-            'bitrate': int(item.get('bitrate') or 0),
-            'language': (item.get('languagecodes') or '').split(',')[0].strip().lower(),
-        })
+    stations, seen = [], set()
 
-    counts = Counter(s['country'] for s in out if s['country'])
+    def add(items):
+        for item in items:
+            url = (item.get('url_resolved') or item.get('url') or '').strip()
+            name = (item.get('name') or '').strip()
+            key = item.get('stationuuid') or url
+            if not url or not name or key in seen:
+                continue
+            seen.add(key)
+            stations.append({
+                'id': key,
+                'name': name[:80],
+                'country': (item.get('countrycode') or '').lower(),
+                'url': url,
+                'tags': [t.strip() for t in (item.get('tags') or '').split(',') if t.strip()][:3],
+                'codec': (item.get('codec') or '').upper(),
+                'bitrate': int(item.get('bitrate') or 0),
+                'language': (item.get('languagecodes') or '').split(',')[0].strip().lower(),
+            })
+
+    print('global top by votes', flush=True)
+    add(search({'limit': GLOBAL_TOP, 'hidebroken': 'true', 'order': 'votes', 'reverse': 'true'}))
+
+    for index, country in enumerate(countries, 1):
+        code = (country.get('iso_3166_1') or '').lower()
+        if not code or code == 'none':
+            continue
+        add(search({
+            'countrycode': code.upper(),
+            'limit': PER_COUNTRY,
+            'hidebroken': 'true',
+            'order': 'clickcount',
+            'reverse': 'true',
+        }))
+        if index % 25 == 0:
+            print(f'  {index} countries, {len(stations)} stations', flush=True)
+        time.sleep(0.15)
+
+    counts = Counter(s['country'] for s in stations if s['country'])
     country_list = [
         {
             'id': code,
-            'name': RU_COUNTRY.get(code.upper()) or countries.get(code.upper(), code.upper()),
+            'name': RU_COUNTRY.get(code.upper()) or iptv_names.get(code.upper(), code.upper()),
             'count': n,
         }
         for code, n in counts.most_common()
     ]
 
-    catalog = {'countries': country_list, 'stations': out}
+    catalog = {'countries': country_list, 'stations': stations}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, 'w', encoding='utf-8') as f:
         json.dump(catalog, f, ensure_ascii=False, separators=(',', ':'))
-    print('stations', len(out), 'countries', len(country_list),
+    print('stations', len(stations), 'countries', len(country_list),
           'bytes', os.path.getsize(OUT))
+    print('top', [(c['name'], c['count']) for c in country_list[:8]])
 
 
 if __name__ == '__main__':
