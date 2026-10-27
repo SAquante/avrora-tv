@@ -42,6 +42,7 @@ fun CamScreen(
     cams: CamCatalog,
     favoriteIds: Set<String>,
     firstItemFocus: FocusRequester,
+    columns: Int = 2,
     onToggleFavorite: (String) -> Unit,
     onPlay: (Cam) -> Unit,
 ) {

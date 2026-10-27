@@ -10,6 +10,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -104,64 +108,85 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
             Box(Modifier.fillMaxSize()) {
                 Backdrop()
 
-                when {
-                    catalog == null -> Loading(vm.error)
-                    else -> Row(Modifier.fillMaxSize()) {
-                        Sidebar(
-                            selected = section,
-                            onSelect = { picked ->
-                                section = picked
-                                languageId = null
-                            },
-                            onEnterContent = { runCatching { contentFocus.requestFocus() } },
-                        )
-                        Box(Modifier.weight(1f).fillMaxHeight()) {
-                            when {
-                                section == SECTION_CAMS -> {
-                                    if (cams == null) {
-                                        Loading(null)
-                                    } else {
-                                        CamScreen(
-                                            cams = cams!!,
-                                            favoriteIds = favorites.camIds,
-                                            firstItemFocus = contentFocus,
-                                            onToggleFavorite = favorites::toggleCam,
-                                            onPlay = { playingCam = it },
-                                        )
-                                    }
-                                }
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val phone = maxWidth < 700.dp
+                    val columns = if (phone) 1 else 2
 
-                                section == SECTION_RADIO -> {
-                                    if (radio == null) {
-                                        Loading(null)
-                                    } else {
-                                        RadioScreen(
-                                            catalog = radio!!,
-                                            favoriteIds = favorites.radioIds,
-                                            firstItemFocus = contentFocus,
-                                            onToggleFavorite = favorites::toggleRadio,
-                                            onPlay = { playingRadio = it },
-                                        )
-                                    }
-                                }
-
-                                else -> {
-                                    val scope = channelScope(section, languageId)
-                                    if (scope == null) {
-                                        LanguageScreen(catalog, contentFocus) { languageId = it; section = SECTION_LANGUAGES }
-                                    } else {
-                                        ChannelScreen(
-                                            catalog = catalog,
-                                            languageId = scope,
-                                            playingId = playing?.id,
-                                            favoriteIds = favorites.channelIds,
-                                            firstItemFocus = contentFocus,
-                                            onToggleFavorite = favorites::toggleChannel,
-                                            onPlay = { playing = it },
-                                        )
-                                    }
+                    val content: @Composable () -> Unit = {
+                        when {
+                            catalog == null -> Loading(vm.error)
+                            section == SECTION_CAMS -> {
+                                if (cams == null) {
+                                    Loading(null)
+                                } else {
+                                    CamScreen(
+                                        cams = cams!!,
+                                        favoriteIds = favorites.camIds,
+                                        firstItemFocus = contentFocus,
+                                        columns = columns,
+                                        onToggleFavorite = favorites::toggleCam,
+                                        onPlay = { playingCam = it },
+                                    )
                                 }
                             }
+
+                            section == SECTION_RADIO -> {
+                                if (radio == null) {
+                                    Loading(null)
+                                } else {
+                                    RadioScreen(
+                                        catalog = radio!!,
+                                        favoriteIds = favorites.radioIds,
+                                        firstItemFocus = contentFocus,
+                                        columns = columns,
+                                        onToggleFavorite = favorites::toggleRadio,
+                                        onPlay = { playingRadio = it },
+                                    )
+                                }
+                            }
+
+                            else -> {
+                                val scope = channelScope(section, languageId)
+                                if (scope == null) {
+                                    LanguageScreen(catalog, contentFocus, columns) {
+                                        languageId = it
+                                        section = SECTION_LANGUAGES
+                                    }
+                                } else {
+                                    ChannelScreen(
+                                        catalog = catalog,
+                                        languageId = scope,
+                                        playingId = playing?.id,
+                                        favoriteIds = favorites.channelIds,
+                                        firstItemFocus = contentFocus,
+                                        columns = columns,
+                                        onToggleFavorite = favorites::toggleChannel,
+                                        onPlay = { playing = it },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (phone) {
+                        Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+                            BottomNav(section) { picked ->
+                                section = picked
+                                languageId = null
+                            }
+                        }
+                    } else {
+                        Row(Modifier.fillMaxSize()) {
+                            Sidebar(
+                                selected = section,
+                                onSelect = { picked ->
+                                    section = picked
+                                    languageId = null
+                                },
+                                onEnterContent = { runCatching { contentFocus.requestFocus() } },
+                            )
+                            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
                         }
                     }
                 }
@@ -302,6 +327,40 @@ private fun Loading(error: String?) {
             Text(error, color = Palette.TextDim)
         }
     }
+}
+
+@Composable
+private fun BottomNav(selected: String, onSelect: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xE61B100A))
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        NavTab("Языки", selected == SECTION_LANGUAGES) { onSelect(SECTION_LANGUAGES) }
+        NavTab("Каналы", selected == SECTION_ALL) { onSelect(SECTION_ALL) }
+        NavTab("Радио", selected == SECTION_RADIO) { onSelect(SECTION_RADIO) }
+        NavTab("Избранное", selected == SECTION_FAVORITES) { onSelect(SECTION_FAVORITES) }
+    }
+}
+
+@Composable
+private fun NavTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val background = if (selected) Color(0x59FFC46B) else if (focused) Palette.CardFocused else Color.Transparent
+    Text(
+        text = label,
+        color = if (selected || focused) Color.White else Palette.TextDim,
+        fontSize = 13.sp,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+    )
 }
 
 @Composable

@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,20 +93,45 @@ fun PlayerScreen(
         }
     }
 
-    // A visible action bar instead of a hidden long-press: DOWN opens it, OK acts on it.
+    // A visible action bar instead of a hidden long-press: DOWN opens it, LEFT/RIGHT switch,
+    // OK acts, UP closes. The title overlay fades out on its own after a few seconds.
     var actionsOpen by remember(channel.id) { mutableStateOf(false) }
+    var actionIndex by remember(channel.id) { mutableIntStateOf(0) }
+    var infoVisible by remember(channel.id) { mutableStateOf(true) }
+    LaunchedEffect(infoVisible) {
+        if (infoVisible) {
+            delay(4000)
+            infoVisible = false
+        }
+    }
     val activity = remember(context) { context.findActivity() }
     DisposableEffect(activity) {
         val handler: (Int, KeyEvent) -> Boolean = { code, event ->
             val down = event.action == KeyEvent.ACTION_DOWN
             when (code) {
                 KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    if (down) actionsOpen = true
+                    if (down) {
+                        infoVisible = true
+                        if (!actionsOpen) {
+                            actionsOpen = true
+                            actionIndex = 0
+                        } else {
+                            actionIndex = (actionIndex + 1).coerceAtMost(1)
+                        }
+                    }
                     true
                 }
 
                 KeyEvent.KEYCODE_DPAD_UP -> {
-                    if (down) actionsOpen = false
+                    if (down) {
+                        actionsOpen = false
+                        infoVisible = true
+                    }
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (down && actionsOpen) actionIndex = 1 - actionIndex
                     true
                 }
 
@@ -112,10 +139,19 @@ fun PlayerScreen(
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 -> {
                     if (down) {
+                        infoVisible = true
                         if (actionsOpen) {
-                            actionsOpen = false
-                            onToggleFavorite()
-                            notice = if (isFavorite) "Убрано из избранного" else "Добавлено в избранное ★"
+                            if (actionIndex == 0) {
+                                actionsOpen = false
+                                onToggleFavorite()
+                                notice = if (isFavorite) "Убрано из избранного" else "Добавлено в избранное ★"
+                            } else {
+                                // cycle through the channel's streams, best quality first
+                                if (streams.size > 1) {
+                                    attempt = (attempt + 1) % streams.size
+                                    notice = "Качество: ${streams[attempt].quality.ifBlank { "авто" }}"
+                                }
+                            }
                         } else {
                             playerRef.value?.let { it.playWhenReady = !it.playWhenReady }
                         }
@@ -128,6 +164,30 @@ fun PlayerScreen(
         }
         activity?.keyHandler = handler
         onDispose { if (activity?.keyHandler === handler) activity.keyHandler = null }
+    }
+
+    // never keep playing in the background
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    var wasPlaying by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    playerRef.value?.let {
+                        wasPlaying = it.playWhenReady
+                        it.pause()
+                    }
+                }
+
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    if (wasPlaying) playerRef.value?.play()
+                }
+
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     DisposableEffect(stream?.url, stream?.userAgent) {
@@ -215,34 +275,35 @@ fun PlayerScreen(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(150.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xCC000000), Color(0x00000000)),
+        if (infoVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xCC000000), Color(0x00000000)),
+                        ),
                     ),
-                ),
-        )
+            )
 
-        Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 20.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = channel.title,
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = listOfNotNull(
-                        stream?.quality?.takeIf { it.isNotEmpty() },
-                        if (isFavorite) "ОК — пауза · ▼ — действия (★ в избранном)"
-                        else "ОК — пауза · ▼ — действия",
-                    ).joinToString(" · "),
-                    color = Palette.TextDim,
-                    fontSize = 13.sp,
-                )
+            Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 20.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = channel.title,
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = listOfNotNull(
+                            stream?.quality?.takeIf { it.isNotEmpty() },
+                            "ОК — пауза · ▼ — действия",
+                        ).joinToString(" · "),
+                        color = Palette.TextDim,
+                        fontSize = 13.sp,
+                    )
+                }
             }
         }
 
@@ -250,16 +311,16 @@ fun PlayerScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Palette.Accent)
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .padding(bottom = 56.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = if (isFavorite) "★ В избранном — убрать" else "☆ В избранное",
-                    color = Palette.Background,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
+                ActionPill(
+                    text = if (isFavorite) "★ В избранном" else "☆ В избранное",
+                    active = actionIndex == 0,
+                )
+                ActionPill(
+                    text = "Качество: ${stream?.quality?.ifBlank { "авто" } ?: "авто"}",
+                    active = actionIndex == 1,
                 )
             }
         }
@@ -279,9 +340,22 @@ fun PlayerScreen(
     }
 }
 
+@Composable
+private fun ActionPill(text: String, active: Boolean) {
+    Text(
+        text = text,
+        color = if (active) Palette.Background else Color.White,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (active) Palette.Accent else Color(0xCC241812))
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+    )
+}
+
 @OptIn(UnstableApi::class)
-private fun buildPlayer(context: Context, stream: Stream): ExoPlayer {
-    val http = DefaultHttpDataSource.Factory()
+private fun buildPlayer(context: Context, stream: Stream): ExoPlayer {    val http = DefaultHttpDataSource.Factory()
         .setUserAgent(stream.userAgent?.takeIf { it.isNotBlank() } ?: DEFAULT_USER_AGENT)
         .setConnectTimeoutMs(8_000)
         .setReadTimeoutMs(15_000)

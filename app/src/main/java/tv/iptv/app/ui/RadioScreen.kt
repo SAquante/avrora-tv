@@ -42,6 +42,7 @@ fun RadioScreen(
     catalog: RadioCatalog,
     favoriteIds: Set<String>,
     firstItemFocus: FocusRequester,
+    columns: Int = 2,
     onToggleFavorite: (String) -> Unit,
     onPlay: (RadioStation) -> Unit,
 ) {
@@ -88,7 +89,12 @@ fun RadioScreen(
         onLongPress = { focusedId.value?.let(onToggleFavorite) },
     )
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp)) {
+    Column(
+        Modifier.fillMaxSize().padding(
+            horizontal = if (columns == 1) 14.dp else 40.dp,
+            vertical = 16.dp,
+        ),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Радио",
@@ -133,7 +139,7 @@ fun RadioScreen(
         Spacer(Modifier.height(16.dp))
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(columns),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),

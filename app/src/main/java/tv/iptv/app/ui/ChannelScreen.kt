@@ -54,6 +54,7 @@ fun ChannelScreen(
     playingId: String?,
     favoriteIds: Set<String>,
     firstItemFocus: FocusRequester,
+    columns: Int = 2,
     onToggleFavorite: (String) -> Unit,
     onPlay: (Channel) -> Unit,
 ) {
@@ -123,7 +124,12 @@ fun ChannelScreen(
         onLongPress = { focusedId.value?.let(onToggleFavorite) },
     )
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 22.dp)) {
+    Column(
+        Modifier.fillMaxSize().padding(
+            horizontal = if (columns == 1) 14.dp else 40.dp,
+            vertical = 16.dp,
+        ),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = languageTitle(catalog, languageId),
@@ -186,7 +192,7 @@ fun ChannelScreen(
             )
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Fixed(columns),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),

@@ -31,6 +31,7 @@ import tv.iptv.app.data.Catalog
 fun LanguageScreen(
     catalog: Catalog,
     firstItemFocus: FocusRequester,
+    columns: Int = 2,
     onPick: (String) -> Unit,
 ) {
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
@@ -45,7 +46,12 @@ fun LanguageScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 26.dp)) {
+    Column(
+        Modifier.fillMaxSize().padding(
+            horizontal = if (columns == 1) 14.dp else 40.dp,
+            vertical = 16.dp,
+        ),
+    ) {
         Text(
             text = greeting(hour),
             color = Palette.Accent,
@@ -68,7 +74,7 @@ fun LanguageScreen(
         Spacer(Modifier.height(22.dp))
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(columns),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),

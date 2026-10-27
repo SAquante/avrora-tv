@@ -112,6 +112,30 @@ fun RadioPlayerScreen(
         onDispose { if (activity?.keyHandler === handler) activity.keyHandler = null }
     }
 
+    // never keep the stream running in the background
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    var wasPlaying by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    playerRef.value?.let {
+                        wasPlaying = it.playWhenReady
+                        it.pause()
+                    }
+                }
+
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    if (wasPlaying) playerRef.value?.play()
+                }
+
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
