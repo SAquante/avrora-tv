@@ -232,14 +232,18 @@ def main():
             if langs:
                 feeds[(row['channel'], row['id'])] = langs
 
-    alive = {}
-    for candidate in ('alive_deep.json', 'alive.json'):
-        candidate_path = os.path.join(DATA, candidate)
-        if os.path.exists(candidate_path):
-            with open(candidate_path, encoding='utf-8') as f:
-                alive = json.load(f)
-            print('liveness data from', candidate, 'for', len(alive), 'urls')
-            break
+    def load_alive(name):
+        path = os.path.join(DATA, name)
+        if not os.path.exists(path):
+            return {}
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+
+    # strict pass first; a stream that only answered once stays as a fallback so
+    # popular channels do not disappear because of one hiccup
+    alive = load_alive('alive_stable.json') or load_alive('alive_deep.json') or load_alive('alive.json')
+    fallback = load_alive('alive_deep.json')
+    print('liveness data for', len(alive), 'urls (fallback', len(fallback), ')')
 
     cat_entries = parse_m3u(os.path.join(DATA, 'index.category.m3u'))
     lang_entries = parse_m3u(os.path.join(DATA, 'index.language.m3u'))
@@ -323,7 +327,15 @@ def main():
     if alive:
         # keep only streams that answered during the liveness probe
         for ch in channels.values():
-            ch['streams'] = [s for s in ch['streams'] if alive.get(s['url'], False)]
+            # only streams that answered both probes; a top-20 Russian channel is
+            # kept even if its single stream hiccuped once, otherwise it vanishes
+            stable = [s for s in ch['streams'] if alive.get(s['url'])]
+            if stable:
+                ch['streams'] = stable
+            elif 'rus' in ch['languages'] and ru_rank(ch['name']) < 20:
+                ch['streams'] = [s for s in ch['streams'] if fallback.get(s['url'])]
+            else:
+                ch['streams'] = []
         print('streams checked:', checked, 'removed:', sum(1 for _ in ()))
 
     print('entries matched to a feed:', known, 'of', len(cat_entries))

@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -123,7 +125,7 @@ fun PlayerScreen(
                             actionsOpen = true
                             actionIndex = 0
                         } else {
-                            actionIndex = (actionIndex + 1).coerceAtMost(2)
+                            actionIndex = (actionIndex + 1).coerceAtMost(1)
                         }
                     }
                     true
@@ -138,7 +140,7 @@ fun PlayerScreen(
                 }
 
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (down && actionsOpen) actionIndex = (actionIndex + 1) % 3
+                    if (down && actionsOpen) actionIndex = 1 - actionIndex
                     true
                 }
 
@@ -152,8 +154,6 @@ fun PlayerScreen(
                                 actionsOpen = false
                                 onToggleFavorite()
                                 notice = if (isFavorite) "Убрано из избранного" else "Добавлено в избранное ★"
-                            } else if (actionIndex == 2) {
-                                playerRef.value?.let { it.playWhenReady = !it.playWhenReady }
                             } else {
                                 // cycle through the channel's streams, best quality first
                                 if (streams.size > 1) {
@@ -277,53 +277,26 @@ fun PlayerScreen(
                 )
             }
 
-            if (paused && !buffering) {
-                Text(
-                    text = if (isTelevision) "Пауза · ОК — продолжить" else "Пауза · коснитесь, чтобы продолжить",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0x99000000))
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
-        }
-
-        if (infoVisible) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(150.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xCC000000), Color(0x00000000)),
-                        ),
-                    ),
-            )
-
-            Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 20.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = channel.title,
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = listOfNotNull(
-                            stream?.quality?.takeIf { it.isNotEmpty() },
-                            if (isTelevision) "ОК — пауза · ▼ — действия" else "Коснитесь — действия и пауза",
-                        ).joinToString(" · "),
-                        color = Palette.TextDim,
-                        fontSize = 13.sp,
-                    )
-                }
-            }
         }
 
         if (actionsOpen) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(92.dp)
+                .clip(CircleShape)
+                .background(if (infoVisible) Color(0xCC1B100A) else Color(0x801B100A))
+                .clickable { playerRef.value?.let { it.playWhenReady = !it.playWhenReady } },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (paused) "▶" else "❚❚",
+                color = Color.White,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -349,11 +322,6 @@ fun PlayerScreen(
                             notice = "Качество: ${streams[attempt].quality.ifBlank { "авто" }}"
                         }
                     },
-                )
-                ActionPill(
-                    text = if (paused) "▶ Играть" else "⏸ Пауза",
-                    active = actionIndex == 2,
-                    onClick = { playerRef.value?.let { it.playWhenReady = !it.playWhenReady } },
                 )
             }
         }
