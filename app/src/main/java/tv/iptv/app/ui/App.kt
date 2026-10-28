@@ -117,8 +117,10 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
                             android.content.pm.PackageManager.FEATURE_TELEVISION,
                         )
                     }
-                    val phone = !isTelevision || maxWidth < 780.dp
-                    val columns = if (phone) 1 else 2
+                    val portrait = maxWidth < maxHeight
+                    // phone portrait: bottom bar + one column; phone landscape and TV: side rail
+                    val useRail = isTelevision || (!portrait && maxWidth >= 600.dp)
+                    val columns = if (useRail) 2 else 1
 
                     val content: @Composable () -> Unit = {
                         when {
@@ -176,7 +178,7 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
                         }
                     }
 
-                    if (phone) {
+                    if (!useRail) {
                         Column(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
                             BottomNav(section) { picked ->
