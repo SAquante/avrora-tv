@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
 import androidx.annotation.OptIn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,6 +69,10 @@ fun PlayerScreen(
     onToggleFavorite: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isTelevision = remember {
+        context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+            context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEVISION)
+    }
     var attempt by remember(channel.id) { mutableIntStateOf(0) }
     var notice by remember(channel.id) { mutableStateOf<String?>(null) }
     var buffering by remember(channel.id) { mutableStateOf(true) }
@@ -116,7 +123,7 @@ fun PlayerScreen(
                             actionsOpen = true
                             actionIndex = 0
                         } else {
-                            actionIndex = (actionIndex + 1).coerceAtMost(1)
+                            actionIndex = (actionIndex + 1).coerceAtMost(2)
                         }
                     }
                     true
@@ -131,7 +138,7 @@ fun PlayerScreen(
                 }
 
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (down && actionsOpen) actionIndex = 1 - actionIndex
+                    if (down && actionsOpen) actionIndex = (actionIndex + 1) % 3
                     true
                 }
 
@@ -145,6 +152,8 @@ fun PlayerScreen(
                                 actionsOpen = false
                                 onToggleFavorite()
                                 notice = if (isFavorite) "Убрано из избранного" else "Добавлено в избранное ★"
+                            } else if (actionIndex == 2) {
+                                playerRef.value?.let { it.playWhenReady = !it.playWhenReady }
                             } else {
                                 // cycle through the channel's streams, best quality first
                                 if (streams.size > 1) {
@@ -225,7 +234,14 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    infoVisible = true
+                    actionsOpen = !actionsOpen
+                    actionIndex = 0
+                }
+            },
     ) {
         if (stream == null) {
             Column(
@@ -263,7 +279,7 @@ fun PlayerScreen(
 
             if (paused && !buffering) {
                 Text(
-                    text = "Пауза · ОК — продолжить",
+                    text = if (isTelevision) "Пауза · ОК — продолжить" else "Пауза · коснитесь, чтобы продолжить",
                     color = Color.White,
                     fontSize = 18.sp,
                     modifier = Modifier
@@ -298,7 +314,7 @@ fun PlayerScreen(
                     Text(
                         text = listOfNotNull(
                             stream?.quality?.takeIf { it.isNotEmpty() },
-                            "ОК — пауза · ▼ — действия",
+                            if (isTelevision) "ОК — пауза · ▼ — действия" else "Коснитесь — действия и пауза",
                         ).joinToString(" · "),
                         color = Palette.TextDim,
                         fontSize = 13.sp,
@@ -308,19 +324,36 @@ fun PlayerScreen(
         }
 
         if (actionsOpen) {
-            Row(
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 56.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .padding(horizontal = 16.dp, vertical = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ActionPill(
                     text = if (isFavorite) "★ В избранном" else "☆ В избранное",
                     active = actionIndex == 0,
+                    onClick = {
+                        actionsOpen = false
+                        onToggleFavorite()
+                        notice = if (isFavorite) "Убрано из избранного" else "Добавлено в избранное ★"
+                    },
                 )
                 ActionPill(
                     text = "Качество: ${stream?.quality?.ifBlank { "авто" } ?: "авто"}",
                     active = actionIndex == 1,
+                    onClick = {
+                        if (streams.size > 1) {
+                            attempt = (attempt + 1) % streams.size
+                            notice = "Качество: ${streams[attempt].quality.ifBlank { "авто" }}"
+                        }
+                    },
+                )
+                ActionPill(
+                    text = if (paused) "▶ Играть" else "⏸ Пауза",
+                    active = actionIndex == 2,
+                    onClick = { playerRef.value?.let { it.playWhenReady = !it.playWhenReady } },
                 )
             }
         }
@@ -341,13 +374,14 @@ fun PlayerScreen(
 }
 
 @Composable
-private fun ActionPill(text: String, active: Boolean) {
+private fun ActionPill(text: String, active: Boolean, onClick: () -> Unit) {
     Text(
         text = text,
         color = if (active) Palette.Background else Color.White,
         fontSize = 16.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
+            .clickable(onClick = onClick)
             .clip(RoundedCornerShape(12.dp))
             .background(if (active) Palette.Accent else Color(0xCC241812))
             .padding(horizontal = 18.dp, vertical = 12.dp),
