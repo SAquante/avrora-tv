@@ -162,7 +162,7 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
                             else -> {
                                 val scope = channelScope(section, languageId)
                                 if (scope == null) {
-                                    LanguageScreen(catalog, contentFocus, columns) {
+                                    LanguageScreen(catalog, contentFocus, columns, narrow = maxWidth < 420.dp) {
                                         languageId = it
                                         section = SECTION_LANGUAGES
                                     }

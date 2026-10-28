@@ -32,6 +32,7 @@ fun LanguageScreen(
     catalog: Catalog,
     firstItemFocus: FocusRequester,
     columns: Int = 2,
+    narrow: Boolean = false,
     onPick: (String) -> Unit,
 ) {
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
@@ -62,7 +63,7 @@ fun LanguageScreen(
         Text(
             text = "Что посмотрим?",
             color = Color.White,
-            fontSize = 38.sp,
+            fontSize = if (narrow) 30.sp else 38.sp,
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(6.dp))
