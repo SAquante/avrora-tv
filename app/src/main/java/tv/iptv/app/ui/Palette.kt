@@ -1,6 +1,16 @@
 package tv.iptv.app.ui
 
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import tv.iptv.app.R
+
 import androidx.compose.ui.graphics.Color
+
+val avroraFont: FontFamily = FontFamily(
+    Font(R.font.montserrat_light, FontWeight.Light),
+    Font(R.font.montserrat_semibold, FontWeight.SemiBold),
+)
 
 object Palette {
     val Background = Color(0xFF170E09)

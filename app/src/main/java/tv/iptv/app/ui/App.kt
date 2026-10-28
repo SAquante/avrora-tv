@@ -104,6 +104,10 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
             surface = Palette.Card,
         ),
     ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalTextStyle provides
+                androidx.compose.ui.text.TextStyle(fontFamily = avroraFont, color = Color.White),
+        ) {
         Surface(Modifier.fillMaxSize(), color = Palette.Background) {
             Box(Modifier.fillMaxSize()) {
                 Backdrop()
@@ -248,6 +252,7 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
                     )
                 }
             }
+        }
         }
     }
 }
