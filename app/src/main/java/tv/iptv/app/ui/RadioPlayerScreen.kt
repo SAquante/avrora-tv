@@ -15,6 +15,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,15 +28,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import tv.iptv.app.data.RadioStation
+import tv.iptv.app.playback.RadioPlayback
 
-@OptIn(UnstableApi::class)
 @Composable
 fun RadioPlayerScreen(
     station: RadioStation,
@@ -44,38 +39,12 @@ fun RadioPlayerScreen(
     onToggleFavorite: () -> Unit,
 ) {
     val context = LocalContext.current
-    var paused by remember(station.id) { mutableStateOf(false) }
-    var buffering by remember(station.id) { mutableStateOf(true) }
     var actionsOpen by remember(station.id) { mutableStateOf(false) }
-    val playerRef = remember { mutableStateOf<ExoPlayer?>(null) }
+    val paused = !RadioPlayback.isPlaying
+    val buffering = RadioPlayback.isBuffering
 
-    DisposableEffect(station.id) {
-        val http = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(10_000)
-            .setReadTimeoutMs(20_000)
-            .setAllowCrossProtocolRedirects(true)
-        val player = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(http))
-            .build()
-            .apply {
-                setMediaItem(MediaItem.fromUri(station.url))
-                playWhenReady = true
-                prepare()
-            }
-        playerRef.value = player
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                buffering = playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                paused = !isPlaying
-            }
-        })
-        onDispose {
-            player.release()
-            playerRef.value = null
-        }
+    LaunchedEffect(station.id) {
+        RadioPlayback.play(context, station)
     }
 
     val activity = remember(context) { context.findActivity() }
@@ -99,7 +68,7 @@ fun RadioPlayerScreen(
                             actionsOpen = false
                             onToggleFavorite()
                         } else {
-                            playerRef.value?.let { it.playWhenReady = !it.playWhenReady }
+                            RadioPlayback.toggle()
                         }
                     }
                     true
@@ -110,30 +79,6 @@ fun RadioPlayerScreen(
         }
         activity?.keyHandler = handler
         onDispose { if (activity?.keyHandler === handler) activity.keyHandler = null }
-    }
-
-    // never keep the stream running in the background
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    var wasPlaying by remember { mutableStateOf(true) }
-    DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                    playerRef.value?.let {
-                        wasPlaying = it.playWhenReady
-                        it.pause()
-                    }
-                }
-
-                androidx.lifecycle.Lifecycle.Event.ON_START -> {
-                    if (wasPlaying) playerRef.value?.play()
-                }
-
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(

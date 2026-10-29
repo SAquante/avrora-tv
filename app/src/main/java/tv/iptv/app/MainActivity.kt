@@ -25,6 +25,12 @@ class MainActivity : ComponentActivity() {
         // surface on some boxes, so only phones get the fullscreen treatment.
         // keep the box awake: the launcher screensaver otherwise blacks the app out
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
         if (!isTelevision()) goFullscreen()
         setContent { IptvApp() }
     }

@@ -33,9 +33,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,11 +51,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import tv.iptv.app.BuildConfig
 import tv.iptv.app.R
 import tv.iptv.app.data.Catalog
 import tv.iptv.app.data.CatalogViewModel
 import tv.iptv.app.data.Channel
 import tv.iptv.app.data.Favorites
+import tv.iptv.app.playback.RadioPlayback
 
 @Composable
 fun IptvApp(vm: CatalogViewModel = viewModel()) {
@@ -69,12 +74,26 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
     var playingRadio by remember { mutableStateOf<tv.iptv.app.data.RadioStation?>(null) }
     val contentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
+    // self-update: look for a newer release once per launch
+    var update by remember { mutableStateOf<tv.iptv.app.data.Updater.Release?>(null) }
+    var downloading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        val release = tv.iptv.app.data.Updater.latest() ?: return@LaunchedEffect
+        if (tv.iptv.app.data.Updater.isNewer(release.version, BuildConfig.VERSION_NAME)) {
+            update = release
+        }
+    }
+
     BackHandler(
         enabled = playing != null || playingCam != null || playingRadio != null ||
             languageId != null || section != SECTION_LANGUAGES,
     ) {
         when {
-            playingRadio != null -> playingRadio = null
+            playingRadio != null -> {
+                RadioPlayback.stop()
+                playingRadio = null
+            }
             playingCam != null -> playingCam = null
             playing != null -> playing = null
             languageId != null -> languageId = null
@@ -216,6 +235,26 @@ fun IptvApp(vm: CatalogViewModel = viewModel()) {
                     )
                 }
 
+                update?.let { release ->
+                    UpdateDialog(
+                        version = release.version,
+                        busy = downloading,
+                        onInstall = {
+                            if (!downloading) {
+                                downloading = true
+                                scope.launch {
+                                    val apk = tv.iptv.app.data.Updater.download(context, release.apkUrl)
+                                    downloading = false
+                                    if (apk != null) {
+                                        tv.iptv.app.data.Updater.install(context, apk)
+                                        update = null
+                                    }
+                                }
+                            }
+                        },
+                        onLater = { update = null },
+                    )
+                }
             }
         }
         }
@@ -341,6 +380,48 @@ private fun NavTab(label: String, selected: Boolean, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     )
+}
+
+@Composable
+private fun UpdateDialog(
+    version: String,
+    busy: Boolean,
+    onInstall: () -> Unit,
+    onLater: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color(0xD9000000)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(600.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xFF2A1A12))
+                .border(2.dp, Palette.Accent, RoundedCornerShape(20.dp))
+                .padding(28.dp),
+        ) {
+            Text(
+                text = "Доступно обновление",
+                color = Color.White,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = if (busy) "Скачиваю версию $version…" else "Версия $version — установить сейчас?",
+                color = Palette.TextDim,
+                fontSize = 15.sp,
+            )
+            Spacer(Modifier.height(22.dp))
+            if (!busy) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FocusableChip("Установить", selected = true) { onInstall() }
+                    FocusableChip("Позже", selected = false) { onLater() }
+                }
+            }
+        }
+    }
 }
 
 @Composable
